@@ -2,105 +2,71 @@ import streamlit as st
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import r2_score, mean_squared_error
-from sklearn.datasets import make_regression
+from sklearn.metrics import r2_score
 
-st.set_page_config(page_title="Huấn luyện Mô hình Học máy", layout="wide")
+st.set_page_config(page_title="Hệ thống Dự báo Học máy", layout="wide")
 
-st.title("Hệ thống Tinh chỉnh và Đánh giá Mô hình Random Forest")
-st.write("Giao diện tương tác cho phép thay đổi siêu tham số, huấn luyện mô hình dự báo và phân tích mức độ đóng góp của từng biến số.")
+st.title("Huấn luyện và Dự báo Mô hình Random Forest")
+st.write("Công cụ xây dựng mô hình dự báo trực tiếp từ tệp dữ liệu tùy chỉnh.")
 
-@st.cache_data
-def load_synthetic_economic_data():
-    # Tạo tập dữ liệu giả lập với 5 biến số đầu vào ảnh hưởng đến 1 biến mục tiêu
-    X, y = make_regression(
-        n_samples=1000, 
-        n_features=5, 
-        n_informative=3, 
-        noise=0.1, 
-        random_state=42
-    )
+uploaded_file = st.file_uploader("Tải lên tệp dữ liệu huấn luyện (định dạng CSV)", type=["csv"])
+
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
+    df = df.dropna()
     
-    feature_names = [
-        "Vốn đầu tư công", 
-        "Lãi suất ngân hàng", 
-        "Chỉ số giá tiêu dùng", 
-        "Tỷ giá hối đoái", 
-        "Giá nguyên vật liệu"
-    ]
+    st.write("Bản xem trước dữ liệu:")
+    st.dataframe(df.head(), use_container_width=True)
     
-    df_X = pd.DataFrame(X, columns=feature_names)
-    df_y = pd.Series(y, name="Chỉ số Tăng trưởng")
-    return df_X, df_y
-
-X, y = load_synthetic_economic_data()
-
-st.sidebar.header("Cấu hình Siêu tham số")
-
-# Các thanh trượt để tinh chỉnh cấu trúc thuật toán Random Forest
-n_estimators = st.sidebar.slider(
-    "Số lượng cây quyết định (n_estimators):", 
-    min_value=10, 
-    max_value=200, 
-    value=50, 
-    step=10
-)
-
-max_depth = st.sidebar.slider(
-    "Độ sâu tối đa của cây (max_depth):", 
-    min_value=2, 
-    max_value=20, 
-    value=5, 
-    step=1
-)
-
-test_size = st.sidebar.slider(
-    "Tỷ lệ tập kiểm thử (test_size):", 
-    min_value=0.1, 
-    max_value=0.5, 
-    value=0.2, 
-    step=0.05
-)
-
-# Nút kích hoạt quá trình huấn luyện
-start_training = st.button("Bắt đầu Huấn luyện Mô hình")
-
-st.divider()
-
-if start_training:
-    with st.spinner("Đang phân tách dữ liệu và huấn luyện thuật toán..."):
-        # Phân tách tập huấn luyện và tập kiểm thử
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=42)
+    st.sidebar.header("Cấu hình Huấn luyện")
+    
+    target_column = st.sidebar.selectbox("Chọn biến mục tiêu cần dự báo (Y):", df.columns)
+    
+    feature_columns = [col for col in df.columns if col != target_column]
+    numeric_features = df[feature_columns].select_dtypes(include=['number']).columns.tolist()
+    
+    if not numeric_features:
+        st.error("Tệp dữ liệu không có cột dạng số hợp lệ để làm biến đầu vào.")
+    else:
+        X = df[numeric_features]
+        y = df[target_column]
         
-        # Khởi tạo và huấn luyện mô hình
-        model = RandomForestRegressor(n_estimators=n_estimators, max_depth=max_depth, random_state=42)
-        model.fit(X_train, y_train)
+        n_estimators = st.sidebar.slider("Số lượng cây quyết định:", 10, 200, 50, 10)
         
-        # Dự báo và tính toán sai số
-        y_pred = model.predict(X_test)
-        r2 = r2_score(y_test, y_pred)
-        mse = mean_squared_error(y_test, y_pred)
+        if st.sidebar.button("Thực thi Huấn luyện"):
+            with st.spinner("Đang xử lý thuật toán..."):
+                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+                
+                model = RandomForestRegressor(n_estimators=n_estimators, random_state=42)
+                model.fit(X_train, y_train)
+                
+                y_pred = model.predict(X_test)
+                r2 = r2_score(y_test, y_pred)
+                
+                st.session_state.trained_model = model
+                st.session_state.feature_cols = numeric_features
+                
+                st.success(f"Huấn luyện hoàn tất. Chỉ số độ chính xác R2 Score: {r2:.4f}")
         
-        st.subheader("1. Đánh giá Hiệu suất Mô hình")
-        col1, col2 = st.columns(2)
-        col1.metric("Hệ số xác định R2 Score", f"{r2:.4f}")
-        col2.metric("Sai số toàn phương trung bình MSE", f"{mse:.2f}")
+        st.divider()
         
-        # Trích xuất và trực quan hóa Feature Importance
-        st.subheader("2. Phân tích Độ quan trọng của đặc trưng")
+        st.subheader("Trích xuất Dự báo")
         
-        # Chuyển đổi mảng mức độ quan trọng thành DataFrame và thiết lập tên cột chuẩn tiếng Việt
-        importance_df = pd.DataFrame({
-            "Đặc trưng": X.columns,
-            "Độ quan trọng của đặc trưng": model.feature_importances_
-        })
-        
-        # Sắp xếp lại dữ liệu theo thứ tự giảm dần để biểu đồ trực quan hơn
-        importance_df = importance_df.sort_values(by="Độ quan trọng của đặc trưng", ascending=False)
-        importance_df = importance_df.set_index("Đặc trưng")
-        
-        st.bar_chart(importance_df)
-        
-        st.write("Nhận xét: Biểu đồ trên thể hiện mức độ đóng góp của từng biến số đầu vào đối với kết quả dự báo của mô hình. Các biến có thanh biểu đồ cao nhất là những yếu tố quyết định chính đến sự biến động của Chỉ số Tăng trưởng.")
-else:
-    st.info("Nhấn nút 'Bắt đầu Huấn luyện Mô hình' để chạy luồng dữ liệu.")
+        if "trained_model" in st.session_state:
+            st.write("Nhập các tham số đầu vào mới để mô hình tính toán kết quả.")
+            
+            input_data = {}
+            cols = st.columns(3)
+            
+            for i, col_name in enumerate(st.session_state.feature_cols):
+                with cols[i % 3]:
+                    default_val = float(df[col_name].mean())
+                    input_data[col_name] = st.number_input(col_name, value=default_val)
+            
+            if st.button("Khởi chạy Dự báo"):
+                input_df = pd.DataFrame([input_data])
+                prediction = st.session_state.trained_model.predict(input_df)
+                
+                st.info(f"Kết quả dự báo cho biến {target_column} là: {prediction[0]:.4f}")
+        else:
+            st.info("Hệ thống yêu cầu huấn luyện mô hình ở thanh cấu hình bên trái trước khi thực hiện dự báo.")
