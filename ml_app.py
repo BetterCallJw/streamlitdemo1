@@ -9,11 +9,27 @@ st.set_page_config(page_title="Hệ thống Dự báo Học máy", layout="wide"
 st.title("Huấn luyện và Dự báo Mô hình Random Forest")
 st.write("Công cụ xây dựng mô hình dự báo trực tiếp từ tệp dữ liệu tùy chỉnh.")
 
-uploaded_file = st.file_uploader("Tải lên tệp dữ liệu huấn luyện (định dạng CSV)", type=["csv"])
+# Mở rộng danh sách định dạng hỗ trợ
+uploaded_file = st.file_uploader(
+    "Tải lên tệp dữ liệu huấn luyện (Hỗ trợ định dạng: CSV, XLSX, XLS, TSV)", 
+    type=["csv", "xlsx", "xls", "tsv"]
+)
 
 if uploaded_file is not None:
     try:
-        df = pd.read_csv(uploaded_file)
+        # Trích xuất định dạng tệp để điều hướng hàm đọc dữ liệu
+        file_extension = uploaded_file.name.split('.')[-1].lower()
+        
+        with st.spinner("Đang nạp và phân tích cấu trúc tệp dữ liệu..."):
+            if file_extension == 'csv':
+                df = pd.read_csv(uploaded_file)
+            elif file_extension in ['xlsx', 'xls']:
+                df = pd.read_excel(uploaded_file)
+            elif file_extension == 'tsv':
+                df = pd.read_csv(uploaded_file, sep='\t')
+            else:
+                st.error("Định dạng tệp không nằm trong danh sách hỗ trợ.")
+                st.stop()
         
         if df.empty:
             st.error("Tệp dữ liệu trống. Hệ thống từ chối xử lý.")
@@ -37,11 +53,9 @@ if uploaded_file is not None:
             st.error("Tập dữ liệu không chứa bất kỳ trường dữ liệu số nào để thực thi thuật toán hồi quy.")
             st.stop()
             
-        # Tối ưu logic: Nếu có cột sales, tự động gán nó làm biến mục tiêu mặc định
         default_y_index = numeric_cols.index('sales') if 'sales' in numeric_cols else 0
         target_column = st.sidebar.selectbox("1. Chọn biến mục tiêu dự báo (Y):", numeric_cols, index=default_y_index)
         
-        # Chức năng mới: Cho phép chủ động loại bỏ các biến đầu vào không mong muốn
         available_features = [col for col in numeric_cols if col != target_column]
         
         selected_features = st.sidebar.multiselect(
@@ -79,7 +93,6 @@ if uploaded_file is not None:
         st.subheader("Trích xuất Dự báo")
         
         if "trained_model" in st.session_state:
-            # Ràng buộc trạng thái: Buộc người dùng huấn luyện lại nếu cấu hình X hoặc Y thay đổi
             if st.session_state.target_col != target_column or st.session_state.feature_cols != selected_features:
                 st.warning("Cấu hình biến đầu vào hoặc đầu ra đã bị thay đổi. Cần thực thi huấn luyện lại mô hình.")
             else:
